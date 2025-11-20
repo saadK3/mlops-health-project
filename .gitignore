@@ -1,0 +1,14 @@
+# Environment and Runtime
+venv/
+__pycache__/
+*.pyc
+
+# IDE and Operating System Files
+.vscode/
+.DS_Store
+
+# Model Artifacts (CRITICAL for MLOps)
+model/
+*.keras
+*.joblib
+*.h5
