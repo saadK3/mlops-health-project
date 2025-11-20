@@ -34,7 +34,7 @@ WEARABLE_FEATURES = [
 ]
 TARGET = "hospital_admissions"
 IMG_SHAPE = (2, 3, 1)
-DATA_FILE_PATH = "C:\\Users\\admin\\Desktop\\mlops-health-project\\data\\MLOPs_data.csv"
+DATA_FILE_PATH = "data/MLOPs_data.csv"
 
 
 # --- 2. Define the Model Building Function (copied from our notebook) ---
