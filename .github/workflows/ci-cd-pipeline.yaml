@@ -36,7 +36,7 @@ jobs:
         python train.py
 
         # 4b. Run Data Drift Check (Monitoring)
-        python 3.0_Data_Drift.py
+        python data_drift.py
 
     # --- Fulfills: 'Automate everything with CI/CD for ML.' (CI part) ---
     - name: 5. Continuous Integration (CI) - Build Docker Image
