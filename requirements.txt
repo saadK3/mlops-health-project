@@ -5,3 +5,4 @@ joblib
 flask
 scipy
 requests
+flwr[simulation]

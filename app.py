@@ -32,31 +32,102 @@ IMG_SHAPE = (2, 3, 1)
 
 # --- 2. Load the Saved Model and Preprocessors ---
 print("Loading model and preprocessors...")
+
+# Initialize all to None first
+model = None
+env_scaler = None
+wearable_scaler = None
+text_encoder = None
+
+load_errors = []
+
+# Load model
 try:
-    model = keras.models.load_model("model/health_model.keras")
-    env_scaler = joblib.load("model/env_scaler.joblib")
-    wearable_scaler = joblib.load("model/wearable_scaler.joblib")
-    text_encoder = joblib.load("model/text_encoder.joblib")
-    print("✅ Model and preprocessors loaded successfully.")
+    if os.path.exists("model/health_model.keras"):
+        model = keras.models.load_model("model/health_model.keras")
+        print("✅ Model loaded successfully.")
+    else:
+        load_errors.append("Model: File 'model/health_model.keras' does not exist")
 except Exception as e:
-    print(f"--- ERROR: Could not load model or preprocessors. ---")
-    print(f"Make sure you have run train.py first!")
-    print(f"Error: {e}")
-    model = None  # Set to None so we know there's a problem
+    load_errors.append(f"Model: {str(e)}")
+
+# Load env_scaler
+try:
+    if os.path.exists("model/env_scaler.joblib"):
+        env_scaler = joblib.load("model/env_scaler.joblib")
+        if env_scaler is None:
+            load_errors.append("env_scaler: File loaded but is None")
+        else:
+            print("✅ env_scaler loaded successfully.")
+    else:
+        load_errors.append("env_scaler: File 'model/env_scaler.joblib' does not exist")
+except Exception as e:
+    load_errors.append(f"env_scaler: {str(e)}")
+
+# Load wearable_scaler
+try:
+    if os.path.exists("model/wearable_scaler.joblib"):
+        wearable_scaler = joblib.load("model/wearable_scaler.joblib")
+        if wearable_scaler is None:
+            load_errors.append("wearable_scaler: File loaded but is None")
+        else:
+            print("✅ wearable_scaler loaded successfully.")
+    else:
+        load_errors.append("wearable_scaler: File 'model/wearable_scaler.joblib' does not exist")
+except Exception as e:
+    load_errors.append(f"wearable_scaler: {str(e)}")
+
+# Load text_encoder
+try:
+    if os.path.exists("model/text_encoder.joblib"):
+        text_encoder = joblib.load("model/text_encoder.joblib")
+        if text_encoder is None:
+            load_errors.append("text_encoder: File loaded but is None")
+        else:
+            print("✅ text_encoder loaded successfully.")
+    else:
+        load_errors.append("text_encoder: File 'model/text_encoder.joblib' does not exist")
+except Exception as e:
+    load_errors.append(f"text_encoder: {str(e)}")
+
+# Print summary
+if load_errors:
+    print("\n" + "=" * 60)
+    print("--- ERROR: Could not load model or preprocessors. ---")
+    print("Make sure you have run train.py or run_distributed_fl.py first!")
+    print("\nDetailed errors:")
+    for error in load_errors:
+        print(f"  ❌ {error}")
+    print("=" * 60)
+else:
+    print("\n✅ All model and preprocessors loaded successfully!")
 
 # --- 3. Initialize the Flask App ---
-app = Flask(__name__)  # This creates our web app
-
+app = Flask(__name__)
 
 # --- 4. Define the Prediction Endpoint ---
-# This creates a URL for our server, e.g., http://localhost:5000/predict
 @app.route("/predict", methods=["POST"])
 def predict():
+    # Check if model and all preprocessors are loaded
     if model is None:
-        return jsonify({"error": "Model is not loaded. Check server logs."}), 500
+        return jsonify({"error": "Model is not loaded. Check server logs for details."}), 500
+    
+    missing_preprocessors = []
+    if env_scaler is None:
+        missing_preprocessors.append("env_scaler")
+    if wearable_scaler is None:
+        missing_preprocessors.append("wearable_scaler")
+    if text_encoder is None:
+        missing_preprocessors.append("text_encoder")
+    
+    if missing_preprocessors:
+        return jsonify({
+            "error": f"Preprocessors not loaded: {', '.join(missing_preprocessors)}. Check server logs for details."
+        }), 500
 
     # Get the JSON data sent by the user
     data = request.get_json()
+    # ... rest of the function
 
     try:
         # --- 5. Preprocess the Incoming Data ---

@@ -4,8 +4,8 @@ import json
 print("--- Testing our Flask API ---")
 
 # This is the URL where our app.py server is running
-url = "http://127.0.0.1:63443/predict"
-# olddd   'http://127.0.0.1:5000/predict'
+url = "http://127.0.0.1:5000/predict"
+
 
 # --- Create some example data for one prediction ---
 # This data must match all the features our model expects.

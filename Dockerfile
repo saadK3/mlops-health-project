@@ -1,5 +1,5 @@
-# l Python 3.10 image from Docker Hub.
-#  gives us a clean Linux OS with Python 3.10 pre-installed.
+# Python 3.10 image from Docker Hub.
+# This gives us a clean Linux OS with Python 3.10 pre-installed.
 FROM python:3.10-slim
 
 # -setting up the Environment ---

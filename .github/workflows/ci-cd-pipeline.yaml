@@ -29,14 +29,37 @@ jobs:
         pip install -r requirements.txt
 
     # --- Fulfills: 'Track experiments, monitor performance, and handle re-training.' ---
-    - name: 4. Continuous Training (CT)
+    - name: 4. Continuous Training (CT) - Federated Learning
       id: training
       run: |
-        # 4a. Run final training script to create the best model and preprocessors
-        python train.py
+        # 4a. Run distributed federated learning to create the best model and preprocessors
+        # This runs the FL server and all clients automatically
+        python run_distributed_fl.py
 
         # 4b. Run Data Drift Check (Monitoring)
         python data_drift.py
+
+    # --- Verify model files were created ---
+    - name: 4c. Verify Model Files
+      run: |
+        echo "Verifying model files were created..."
+        if [ ! -f "model/health_model.keras" ]; then
+          echo "❌ ERROR: health_model.keras not found!"
+          exit 1
+        fi
+        if [ ! -f "model/env_scaler.joblib" ]; then
+          echo "❌ ERROR: env_scaler.joblib not found!"
+          exit 1
+        fi
+        if [ ! -f "model/wearable_scaler.joblib" ]; then
+          echo "❌ ERROR: wearable_scaler.joblib not found!"
+          exit 1
+        fi
+        if [ ! -f "model/text_encoder.joblib" ]; then
+          echo "❌ ERROR: text_encoder.joblib not found!"
+          exit 1
+        fi
+        echo "✅ All model files verified successfully!"
 
     # --- Fulfills: 'Automate everything with CI/CD for ML.' (CI part) ---
     - name: 5. Continuous Integration (CI) - Build Docker Image
