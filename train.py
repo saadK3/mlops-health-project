@@ -34,7 +34,7 @@ WEARABLE_FEATURES = [
 TARGET = "hospital_admissions"
 IMG_SHAPE = (2, 3, 1)
 DATA_FILE_PATH = "data/MLOPs_data.csv"
-CLIENT_CITIES = ['Delhi', 'Beijing', 'Mexico City', 'Los Angeles']
+CLIENT_CITIES = ["Delhi", "Beijing", "Mexico City", "Los Angeles"]
 
 
 # --- 2. Define the Model Building Function (copied from our notebook) ---
@@ -81,10 +81,10 @@ text_encoder = None
 def initialize_preprocessors():
     """Initialize and fit preprocessors on all data."""
     global env_scaler, wearable_scaler, text_encoder
-    
+
     if env_scaler is not None:
         return  # Already initialized
-    
+
     print("Fitting preprocessors on all data...")
     df = pd.read_csv(DATA_FILE_PATH, encoding="latin1")
 
@@ -109,7 +109,7 @@ def load_and_preprocess_data_for_client(client_city: str):
     """
     # Ensure preprocessors are initialized
     initialize_preprocessors()
-    
+
     df = pd.read_csv(DATA_FILE_PATH, encoding="latin1")
     client_df = df[df["city"] == client_city].copy()
 
@@ -124,9 +124,7 @@ def load_and_preprocess_data_for_client(client_city: str):
 
     # 3. Preprocess Branch 3: Wearable/Image Data
     X_wearable_scaled = wearable_scaler.transform(client_df[WEARABLE_FEATURES])
-    X_image = X_wearable_scaled.reshape(
-        (-1, IMG_SHAPE[0], IMG_SHAPE[1], IMG_SHAPE[2])
-    )
+    X_image = X_wearable_scaled.reshape((-1, IMG_SHAPE[0], IMG_SHAPE[1], IMG_SHAPE[2]))
 
     # 4. Prepare the Target (Y)
     y = client_df[TARGET].values
@@ -218,9 +216,7 @@ class HealthRiskClient(fl.client.NumPyClient):
 
         loss, mae = self.model.evaluate(self.X_test, self.y_test, verbose=0)
 
-        print(
-            f"[Client {self.client_city}] Evaluation: Loss={loss:.4f}, MAE={mae:.4f}"
-        )
+        print(f"[Client {self.client_city}] Evaluation: Loss={loss:.4f}, MAE={mae:.4f}")
         return loss, len(self.y_test), {"mae": mae}
 
 
@@ -233,10 +229,10 @@ def client_fn(cid: str) -> HealthRiskClient:
 # --- 6. Main execution (only runs when script is executed directly) ---
 if __name__ == "__main__":
     print("Starting federated learning training script (simulation mode)...")
-    
+
     # Initialize preprocessors
     initialize_preprocessors()
-    
+
     # --- Run Federated Learning Simulation ---
     print("\n--- Starting Federated Learning Simulation ---")
 
@@ -265,7 +261,7 @@ if __name__ == "__main__":
     # Note: In Flower's simulation mode, the final aggregated model weights are held by the server
     # and not directly accessible. For this script, we'll create a model instance.
     # In production, you would retrieve the final aggregated weights directly from the server.
-    # 
+    #
     # The model from a client that participated in all rounds will have weights that are
     # close to the aggregated model (since clients receive aggregated weights each round).
 
@@ -276,7 +272,9 @@ if __name__ == "__main__":
     temp_client = client_fn("0")
     final_params = temp_client.get_parameters({})
     final_model.set_weights(final_params)
-    print("Final model extracted (using client parameters as proxy for aggregated model).")
+    print(
+        "Final model extracted (using client parameters as proxy for aggregated model)."
+    )
 
     # --- 8. Save the Model and Preprocessors ---
     print("Saving model and preprocessors...")
