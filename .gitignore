@@ -12,3 +12,8 @@ model/
 *.keras
 *.joblib
 *.h5
+
+# Frontend (excluded for now)
+frontend/
+node_modules/
+

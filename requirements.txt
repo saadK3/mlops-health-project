@@ -6,3 +6,4 @@ flask
 scipy
 requests
 flwr[simulation]
+flask-cors

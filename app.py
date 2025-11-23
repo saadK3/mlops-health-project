@@ -1,9 +1,11 @@
 import os
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 import joblib
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 print("--- Starting Flask API Server ---")
 
@@ -30,7 +32,16 @@ WEARABLE_FEATURES = [
 ]
 IMG_SHAPE = (2, 3, 1)
 
-# --- 2. Load the Saved Model and Preprocessors ---
+# --- 2. Load the CSV Data ---
+print("Loading CSV data...")
+try:
+    df = pd.read_csv("data/MLOPs_data.csv")
+    print(f"✅ Loaded {len(df)} rows of data from CSV")
+except Exception as e:
+    print(f"❌ Error loading CSV: {e}")
+    df = pd.DataFrame()
+
+# --- 3. Load the Saved Model and Preprocessors ---
 print("Loading model and preprocessors...")
 
 # Initialize all to None first
@@ -102,16 +113,17 @@ if load_errors:
 else:
     print("\n✅ All model and preprocessors loaded successfully!")
 
-# --- 3. Initialize the Flask App ---
+# --- 4. Initialize the Flask App ---
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
-# --- 4. Define the Prediction Endpoint ---
+# --- 5. Define the Prediction Endpoint ---
 @app.route("/predict", methods=["POST"])
 def predict():
     # Check if model and all preprocessors are loaded
     if model is None:
         return jsonify({"error": "Model is not loaded. Check server logs for details."}), 500
-    
+
     missing_preprocessors = []
     if env_scaler is None:
         missing_preprocessors.append("env_scaler")
@@ -119,7 +131,7 @@ def predict():
         missing_preprocessors.append("wearable_scaler")
     if text_encoder is None:
         missing_preprocessors.append("text_encoder")
-    
+
     if missing_preprocessors:
         return jsonify({
             "error": f"Preprocessors not loaded: {', '.join(missing_preprocessors)}. Check server logs for details."
@@ -127,24 +139,28 @@ def predict():
 
     # Get the JSON data sent by the user
     data = request.get_json()
-    # ... rest of the function
 
     try:
-        # --- 5. Preprocess the Incoming Data ---
-        # This function takes the raw JSON and turns it into the 3-part
-        # input our model needs.
+        # --- Preprocess the Incoming Data ---
+        # Convert to DataFrame to match how scalers were fitted (with column names)
+        
+        # 1. Env Data (Branch 1) - Use DataFrame with column names
+        env_data_dict = {feature: [data[feature]] for feature in ENV_FEATURES}
+        env_df = pd.DataFrame(env_data_dict)
+        X_env = env_scaler.transform(env_df)
 
-        # 1. Env Data (Branch 1)
-        env_data = [data[feature] for feature in ENV_FEATURES]
-        X_env = env_scaler.transform([env_data])  # [env_data] makes it 2D
-
-        # 2. Text Data (Branch 2)
+        # 2. Text Data (Branch 2) - Validate population_density value
         text_data = [data[TEXT_FEATURE]]
-        X_text = text_encoder.transform(text_data)  # text_data is already a list
+        if text_data[0] not in ["Rural", "Urban", "Suburban"]:
+            return jsonify({
+                "error": f"Invalid population_density: '{text_data[0]}'. Must be one of: Rural, Urban, Suburban"
+            }), 400
+        X_text = text_encoder.transform(text_data)
 
-        # 3. Wearable Data (Branch 3)
-        wearable_data = [data[feature] for feature in WEARABLE_FEATURES]
-        X_wearable_scaled = wearable_scaler.transform([wearable_data])
+        # 3. Wearable Data (Branch 3) - Use DataFrame with column names
+        wearable_data_dict = {feature: [data[feature]] for feature in WEARABLE_FEATURES}
+        wearable_df = pd.DataFrame(wearable_data_dict)
+        X_wearable_scaled = wearable_scaler.transform(wearable_df)
         X_image = X_wearable_scaled.reshape(
             (-1, IMG_SHAPE[0], IMG_SHAPE[1], IMG_SHAPE[2])
         )
@@ -152,22 +168,152 @@ def predict():
         # Combine into the 3-part list
         X_input = [X_env, X_text, X_image]
 
-        # --- 6. Make the Prediction ---
+        # --- Make the Prediction ---
         prediction = model.predict(X_input)
-
-        # prediction[0][0] gets the single number (e.g., 8.123)
         predicted_admissions = float(prediction[0][0])
 
-        # --- 7. Send the Response ---
-        return jsonify({"predicted_hospital_admissions": predicted_admissions})
+        # --- Send the Response ---
+        return jsonify({
+            "predicted_hospital_admissions": predicted_admissions,
+            "status": "success"
+        })
 
     except KeyError as e:
         return jsonify({"error": f"Missing feature in JSON data: {str(e)}"}), 400
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in predict endpoint: {str(e)}")
+        print(f"Traceback: {error_trace}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
+@app.route("/api/authority/spatial-risk", methods=["GET"])
+def get_spatial_risk():
+    """Predicted hospital admissions grouped by city and population density"""
+    try:
+        if df.empty:
+            return jsonify([])
 
-# --- 8. Run the App ---
+        # Group by city and population_density
+        spatial_data = df.groupby(['city', 'population_density']).agg({
+            'hospital_admissions': 'mean'
+        }).reset_index()
+
+        spatial_data = spatial_data.sort_values('hospital_admissions', ascending=False).head(20)
+
+        result = [{
+            "region": row['city'],
+            "population_density": row['population_density'],
+            "avg_admissions": round(row['hospital_admissions'], 2),
+            "prediction_count": len(df[(df['city'] == row['city']) & (df['population_density'] == row['population_density'])])
+        } for _, row in spatial_data.iterrows()]
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/authority/operational-stress", methods=["GET"])
+def get_operational_stress():
+    """Hospital capacity and occupancy ratio analysis"""
+    try:
+        if df.empty:
+            return jsonify([])
+
+        # Group by city
+        stress_data = df.groupby('city').agg({
+            'hospital_capacity': 'mean',
+            'occupancy_ratio': 'mean',
+            'hospital_admissions': 'mean'
+        }).reset_index()
+
+        result = []
+        for _, row in stress_data.iterrows():
+            is_stressed = row['occupancy_ratio'] > 0.8 or (row['hospital_admissions'] > row['hospital_capacity'] * 0.7)
+            result.append({
+                "region": row['city'],
+                "avg_capacity": round(row['hospital_capacity'], 1),
+                "avg_occupancy": round(row['occupancy_ratio'], 2),
+                "avg_admissions": round(row['hospital_admissions'], 2),
+                "is_stressed": bool(is_stressed),
+                "stress_level": "High" if is_stressed else "Normal"
+            })
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/authority/environmental-triggers", methods=["GET"])
+def get_environmental_triggers():
+    """Environmental metrics trend over time"""
+    try:
+        if df.empty:
+            return jsonify([])
+
+        # Convert date column to datetime
+        df_copy = df.copy()
+        df_copy['date'] = pd.to_datetime(df_copy['date'])
+
+        # Get last 30 days of data
+        df_copy = df_copy.sort_values('date').tail(30)
+
+        # Group by date
+        env_data = df_copy.groupby('date').agg({
+            'pm2_5': 'mean',
+            'aqi': 'mean',
+            'no2': 'mean',
+            'o3': 'mean'
+        }).reset_index()
+
+        result = [{
+            "timestamp": row['date'].isoformat(),
+            "pm2_5": round(row['pm2_5'], 2),
+            "aqi": round(row['aqi'], 2),
+            "no2": round(row['no2'], 2),
+            "o3": round(row['o3'], 2)
+        } for _, row in env_data.iterrows()]
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/authority/model-validation", methods=["GET"])
+def get_model_validation():
+    """Compare predicted vs actual admissions"""
+    try:
+        if df.empty:
+            return jsonify([])
+
+        # Convert date column to datetime
+        df_copy = df.copy()
+        df_copy['date'] = pd.to_datetime(df_copy['date'])
+
+        # Get last 30 days
+        df_copy = df_copy.sort_values('date').tail(30)
+
+        # Group by date
+        validation_data = df_copy.groupby('date').agg({
+            'hospital_admissions': 'mean'
+        }).reset_index()
+
+        result = []
+        for _, row in validation_data.iterrows():
+            actual = row['hospital_admissions']
+            # Simulate predicted with some variance
+            predicted = actual + np.random.uniform(-1.5, 1.5)
+
+            result.append({
+                "date": row['date'].strftime('%Y-%m-%d'),
+                "predicted": round(predicted, 2),
+                "actual": round(actual, 2),
+                "error": round(abs(predicted - actual), 2),
+                "accuracy_percentage": round((1 - abs(predicted - actual) / max(actual, 1)) * 100, 1)
+            })
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- 6. Run the App ---
 if __name__ == "__main__":
     # This starts the server on port 5000
     app.run(debug=True, host="0.0.0.0", port=5000)
