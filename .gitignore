@@ -13,7 +13,9 @@ model/
 *.joblib
 *.h5
 
-# Frontend (excluded for now)
-frontend/
-node_modules/
+# Frontend - exclude dependencies only
+frontend/node_modules/
 
+# MLflow
+mlruns/
+mlartifacts/

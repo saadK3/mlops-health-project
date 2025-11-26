@@ -2,6 +2,7 @@
 """
 Comprehensive model performance testing script.
 Tests the saved model on test data and validates the API endpoint.
+Includes MLflow tracking for evaluation runs.
 """
 import os
 import numpy as np
@@ -11,6 +12,8 @@ import joblib
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import requests
 import json
+import mlflow
+from datetime import datetime
 
 # Import from train.py
 from train import (
@@ -241,11 +244,14 @@ def print_summary(city_results, overall_results, api_test_result):
 
 
 def main():
-    """Run all tests."""
+    """Run all tests with MLflow tracking."""
     print("\n" + "=" * 60)
     print("MODEL PERFORMANCE TEST SUITE")
     print("=" * 60)
     print()
+    
+    # Set up MLflow experiment
+    mlflow.set_experiment("model-evaluation")
     
     # Test 1: Model loading
     model, preprocessors = test_model_loading()
@@ -253,14 +259,51 @@ def main():
         print("\n❌ Cannot proceed with tests - model loading failed")
         return
     
-    # Test 2: Model evaluation
-    city_results, overall_results = evaluate_model_on_test_data(model)
-    
-    # Test 3: API endpoint
-    api_test_result = test_api_endpoint()
-    
-    # Print summary
-    print_summary(city_results, overall_results, api_test_result)
+    # Start MLflow run for evaluation
+    with mlflow.start_run(run_name=f"evaluation_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+        # Log model info
+        mlflow.log_param("model_type", "multi_modal_health_risk")
+        mlflow.log_param("model_file", "model/health_model.keras")
+        
+        # Test 2: Model evaluation
+        city_results, overall_results = evaluate_model_on_test_data(model)
+        
+        # Log overall metrics to MLflow
+        mlflow.log_metric("overall_mse", overall_results["mse"])
+        mlflow.log_metric("overall_mae", overall_results["mae"])
+        mlflow.log_metric("overall_rmse", overall_results["rmse"])
+        mlflow.log_metric("overall_r2", overall_results["r2"])
+        mlflow.log_param("total_test_samples", overall_results["samples"])
+        
+        # Log city-specific metrics
+        for city, results in city_results.items():
+            if "error" not in results:
+                mlflow.log_metric(f"{city}_mse", results["mse"])
+                mlflow.log_metric(f"{city}_mae", results["mae"])
+                mlflow.log_metric(f"{city}_rmse", results["rmse"])
+                mlflow.log_metric(f"{city}_r2", results["r2"])
+                mlflow.log_param(f"{city}_samples", results["samples"])
+        
+        # Test 3: API endpoint
+        api_test_result = test_api_endpoint()
+        
+        # Log API test results
+        if api_test_result["success"]:
+            mlflow.log_param("api_test_status", "passed")
+            mlflow.log_metric("api_response_time_ms", api_test_result.get("response_time", 0))
+        else:
+            mlflow.log_param("api_test_status", "failed")
+            mlflow.log_param("api_test_error", api_test_result.get("error", "unknown"))
+        
+        # Print summary
+        print_summary(city_results, overall_results, api_test_result)
+        
+        print("\n" + "=" * 60)
+        print("📊 MLflow Run Info:")
+        print(f"   Experiment: model-evaluation")
+        print(f"   Run ID: {mlflow.active_run().info.run_id}")
+        print(f"   View UI: mlflow ui (then open http://localhost:5000)")
+        print("=" * 60)
 
 
 if __name__ == "__main__":

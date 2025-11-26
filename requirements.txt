@@ -7,3 +7,4 @@ scipy
 requests
 flwr[simulation]
 flask-cors
+mlflow

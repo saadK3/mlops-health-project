@@ -1,6 +1,7 @@
 """
 Simplified training script that trains a model directly without federated learning.
 This avoids the TensorFlow DLL issues with Flower simulation.
+Includes MLflow experiment tracking.
 """
 import pandas as pd
 import numpy as np
@@ -9,8 +10,12 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import joblib
 import os
+import mlflow
+import mlflow.keras
+from datetime import datetime
 
 # --- 1. Define Global Configuration ---
 ENV_FEATURES = [
@@ -136,37 +141,105 @@ def main():
     model = build_multi_modal_model()
     print("   ✅ Model built")
     
-    print("\n5. Training model...")
-    print("   (This may take a few minutes...)")
-    history = model.fit(
-        X_train,
-        y_train,
-        epochs=10,
-        batch_size=32,
-        validation_data=(X_test, y_test),
-        verbose=1,
-    )
+    # MLflow setup
+    mlflow.set_experiment("health-risk-prediction")
     
-    # Evaluate
-    print("\n6. Evaluating model...")
-    loss, mae = model.evaluate(X_test, y_test, verbose=0)
-    print(f"   ✅ Test Loss: {loss:.4f}, Test MAE: {mae:.4f}")
+    # Training hyperparameters
+    epochs = 10
+    batch_size = 32
+    learning_rate = 0.001
     
-    # Save model and preprocessors
-    print("\n7. Saving model and preprocessors...")
-    os.makedirs("model", exist_ok=True)
+    print("\n5. Starting MLflow experiment tracking...")
+    print("   Run: mlflow ui to view experiments at http://localhost:5000")
     
-    model.save("model/health_model.keras")
-    joblib.dump(env_scaler, "model/env_scaler.joblib")
-    joblib.dump(wearable_scaler, "model/wearable_scaler.joblib")
-    joblib.dump(text_encoder, "model/text_encoder.joblib")
-    
-    print("   ✅ Model saved to model/health_model.keras")
-    print("   ✅ Preprocessors saved to model/ directory")
-    
-    print("\n" + "=" * 60)
-    print("✅ Training complete!")
-    print("=" * 60)
+    with mlflow.start_run(run_name=f"train_simple_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+        # Log parameters
+        mlflow.log_param("training_method", "simple_direct")
+        mlflow.log_param("epochs", epochs)
+        mlflow.log_param("batch_size", batch_size)
+        mlflow.log_param("learning_rate", learning_rate)
+        mlflow.log_param("train_samples", len(y_train))
+        mlflow.log_param("test_samples", len(y_test))
+        mlflow.log_param("env_features_count", len(ENV_FEATURES))
+        mlflow.log_param("wearable_features_count", len(WEARABLE_FEATURES))
+        mlflow.log_param("test_split", 0.2)
+        mlflow.log_param("random_seed", 42)
+        
+        print("\n6. Training model...")
+        print("   (This may take a few minutes...)")
+        history = model.fit(
+            X_train,
+            y_train,
+            epochs=epochs,
+            batch_size=batch_size,
+            validation_data=(X_test, y_test),
+            verbose=1,
+        )
+        
+        # Log training history metrics
+        for epoch in range(epochs):
+            mlflow.log_metric("train_loss", history.history['loss'][epoch], step=epoch)
+            mlflow.log_metric("val_loss", history.history['val_loss'][epoch], step=epoch)
+            mlflow.log_metric("train_mae", history.history['mae'][epoch], step=epoch)
+            mlflow.log_metric("val_mae", history.history['val_mae'][epoch], step=epoch)
+        
+        # Evaluate
+        print("\n7. Evaluating model...")
+        test_loss, test_mae = model.evaluate(X_test, y_test, verbose=0)
+        
+        # Make predictions for additional metrics
+        y_pred = model.predict(X_test, verbose=0).flatten()
+        test_mse = mean_squared_error(y_test, y_pred)
+        test_rmse = np.sqrt(test_mse)
+        test_r2 = r2_score(y_test, y_pred)
+        
+        print(f"   ✅ Test Loss: {test_loss:.4f}")
+        print(f"   ✅ Test MAE: {test_mae:.4f}")
+        print(f"   ✅ Test RMSE: {test_rmse:.4f}")
+        print(f"   ✅ Test R²: {test_r2:.4f}")
+        
+        # Log final metrics
+        mlflow.log_metric("final_test_loss", test_loss)
+        mlflow.log_metric("final_test_mae", test_mae)
+        mlflow.log_metric("final_test_mse", test_mse)
+        mlflow.log_metric("final_test_rmse", test_rmse)
+        mlflow.log_metric("final_test_r2", test_r2)
+        
+        # Log model
+        print("\n8. Logging model to MLflow...")
+        mlflow.keras.log_model(model, "model", registered_model_name="HealthRiskPredictionModel")
+        print("   ✅ Model logged to MLflow")
+        
+        # Save model and preprocessors locally
+        print("\n9. Saving model and preprocessors locally...")
+        os.makedirs("model", exist_ok=True)
+        
+        model.save("model/health_model.keras")
+        joblib.dump(env_scaler, "model/env_scaler.joblib")
+        joblib.dump(wearable_scaler, "model/wearable_scaler.joblib")
+        joblib.dump(text_encoder, "model/text_encoder.joblib")
+        
+        # Log preprocessors as artifacts
+        mlflow.log_artifact("model/env_scaler.joblib", "preprocessors")
+        mlflow.log_artifact("model/wearable_scaler.joblib", "preprocessors")
+        mlflow.log_artifact("model/text_encoder.joblib", "preprocessors")
+        
+        print("   ✅ Model saved to model/health_model.keras")
+        print("   ✅ Preprocessors saved to model/ directory")
+        print("   ✅ Preprocessors logged to MLflow")
+        
+        # Log data info
+        mlflow.log_param("data_file", DATA_FILE_PATH)
+        mlflow.log_param("total_samples", len(df))
+        
+        print("\n" + "=" * 60)
+        print("✅ Training complete!")
+        print("=" * 60)
+        print("\n📊 MLflow Run Info:")
+        print(f"   Experiment: health-risk-prediction")
+        print(f"   Run ID: {mlflow.active_run().info.run_id}")
+        print(f"   View UI: mlflow ui (then open http://localhost:5000)")
+        print("=" * 60)
 
 
 if __name__ == "__main__":

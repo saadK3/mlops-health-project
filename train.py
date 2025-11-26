@@ -281,12 +281,46 @@ if __name__ == "__main__":
     # Create a 'model' directory if it doesn't exist
     os.makedirs("model", exist_ok=True)
 
-    # Save the TensorFlow/Keras model (federated aggregated model)
-    final_model.save("model/health_model.keras")
+    # MLflow tracking for federated learning
+    import mlflow
+    import mlflow.keras
+    from datetime import datetime
+    
+    mlflow.set_experiment("health-risk-prediction")
+    
+    with mlflow.start_run(run_name=f"federated_learning_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+        # Log federated learning parameters
+        mlflow.log_param("training_method", "federated_learning")
+        mlflow.log_param("num_clients", len(CLIENT_CITIES))
+        mlflow.log_param("num_rounds", 3)
+        mlflow.log_param("cities", ", ".join(CLIENT_CITIES))
+        mlflow.log_param("aggregation_strategy", "FedAvg")
+        
+        # Evaluate final model
+        print("Evaluating final aggregated model...")
+        # Create test data from one client for evaluation
+        temp_client = client_fn("0")
+        _, (X_test, y_test) = temp_client.X_test, temp_client.y_test if hasattr(temp_client, 'X_test') else load_and_preprocess_data_for_client(CLIENT_CITIES[0])[1]
+        
+        if X_test is not None and y_test is not None:
+            test_loss, test_mae = final_model.evaluate(X_test, y_test, verbose=0)
+            mlflow.log_metric("final_test_loss", test_loss)
+            mlflow.log_metric("final_test_mae", test_mae)
+            print(f"   Final Test Loss: {test_loss:.4f}, MAE: {test_mae:.4f}")
+        
+        # Save the TensorFlow/Keras model (federated aggregated model)
+        final_model.save("model/health_model.keras")
 
-    # Save our preprocessors using joblib
-    joblib.dump(env_scaler, "model/env_scaler.joblib")
-    joblib.dump(wearable_scaler, "model/wearable_scaler.joblib")
-    joblib.dump(text_encoder, "model/text_encoder.joblib")
-
-    print("--- ✅ Training and saving complete! ---")
+        # Save our preprocessors using joblib
+        joblib.dump(env_scaler, "model/env_scaler.joblib")
+        joblib.dump(wearable_scaler, "model/wearable_scaler.joblib")
+        joblib.dump(text_encoder, "model/text_encoder.joblib")
+        
+        # Log model and artifacts to MLflow
+        mlflow.keras.log_model(final_model, "model", registered_model_name="HealthRiskPredictionModel")
+        mlflow.log_artifact("model/env_scaler.joblib", "preprocessors")
+        mlflow.log_artifact("model/wearable_scaler.joblib", "preprocessors")
+        mlflow.log_artifact("model/text_encoder.joblib", "preprocessors")
+        
+        print("--- ✅ Training and saving complete! ---")
+        print(f"📊 MLflow Run ID: {mlflow.active_run().info.run_id}")
